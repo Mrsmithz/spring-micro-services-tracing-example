@@ -1,0 +1,55 @@
+services:
+  collector:
+    image: otel/opentelemetry-collector-contrib
+    volumes:
+      - ./docker/collector-config.yaml:/collector-config.yaml
+    command: [ '--config=/collector-config.yaml' ]
+    ports:
+      - '4318:4318'
+  zipkin:
+    image: openzipkin/zipkin
+    ports:
+      - '9411:9411'
+  mongo:
+    image: mongo
+    restart: always
+    ports:
+      - '37017:27017'
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: password
+      MONGO_INITDB_DATABASE: test
+    volumes:
+      - ./docker/mongo:/docker-entrypoint-initdb.d/
+  book-info-service:
+    build:
+      context: ./book-info-service
+      dockerfile: Dockerfile
+    depends_on:
+      - collector
+    environment:
+      OTEL_COLLECTOR: http://collector:4318
+  book-ratings-service:
+    build:
+      context: ./book-ratings-service
+      dockerfile: Dockerfile
+    environment:
+      OTEL_COLLECTOR: http://collector:4318
+      MONGO_URI: mongodb://root:password@mongo:27017/test?authSource=admin
+    depends_on:
+      - mongo
+      - collector
+  book-service:
+    build:
+      context: ./book-service
+      dockerfile: Dockerfile
+    environment:
+      OTEL_COLLECTOR: http://collector:4318
+      BOOK_INFO_SERVICE_URL: http://book-info-service:8080
+      BOOK_RATINGS_SERVICE_URL: http://book-ratings-service:8080
+    depends_on:
+      - book-ratings-service
+      - book-info-service
+      - collector
+    ports:
+      - '8080:8080'
